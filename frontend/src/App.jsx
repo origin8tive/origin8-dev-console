@@ -1,6 +1,8 @@
 import React, { useState, useRef, useEffect } from 'react';
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+// In production (Firebase) VITE_API_URL is empty → calls go to /api/* on same domain.
+// In local dev it falls back to the standalone Express server.
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:5000';
 
 const logColor = (type) =>
   ({ info: '#60a5fa', success: '#34d399', error: '#f87171', output: '#e2e8f0' }[type] ?? '#e2e8f0');
