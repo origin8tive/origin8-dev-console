@@ -7,7 +7,11 @@ const path = require('path');
 const fs = require('fs');
 
 const app = express();
-const client = new Anthropic(); // reads ANTHROPIC_API_KEY from env
+const client = new Anthropic();
+
+const allowedOrigins = process.env.ALLOWED_ORIGINS
+  ? process.env.ALLOWED_ORIGINS.split(',')
+  : ['http://localhost:3000', 'http://localhost:5173'];
 
 // Security: only allow commands starting with these prefixes
 const ALLOWED_COMMANDS = [
@@ -18,7 +22,7 @@ const ALLOWED_COMMANDS = [
 
 const WORKSPACE = '/tmp/ai-workspace';
 
-app.use(cors());
+app.use(cors({ origin: allowedOrigins, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
@@ -144,8 +148,9 @@ app.post('/run-command', (req, res) => {
   });
 });
 
-app.listen(5000, () => {
-  console.log('Origin8 Dev Console backend running on http://localhost:5000');
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Origin8 Dev Console backend running on port ${PORT}`);
   if (!process.env.ANTHROPIC_API_KEY) {
     console.warn('WARNING: ANTHROPIC_API_KEY is not set — Claude calls will fail');
   }
