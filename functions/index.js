@@ -34,8 +34,12 @@ function buildApp(apiKey) {
     if (!prompt || typeof prompt !== 'string' || prompt.length > 1000)
       return res.status(400).json({ error: 'Invalid prompt (max 1000 chars)' });
 
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
     try {
-      const message = await client.messages.create({
+      const stream = client.messages.stream({
         model: 'claude-sonnet-4-6',
         max_tokens: 2048,
         system: 'You are an expert software development assistant. Create clear, actionable execution plans.',
@@ -44,9 +48,17 @@ function buildApp(apiKey) {
           content: `Create a detailed execution plan for this development task:\n\n"${prompt}"\n\nFormat as a numbered list covering:\n1. Files to create or modify\n2. Commands to run\n3. Dependencies needed\n4. Expected result`
         }]
       });
-      res.json({ plan: message.content[0].text });
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+          res.write(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`);
+        }
+      }
+      res.write('data: [DONE]\n\n');
+      res.end();
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+      res.end();
     }
   });
 
@@ -55,16 +67,28 @@ function buildApp(apiKey) {
     if (!prompt || typeof prompt !== 'string' || prompt.length > 1000)
       return res.status(400).json({ error: 'Invalid prompt (max 1000 chars)' });
 
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+
     try {
-      const message = await client.messages.create({
+      const stream = client.messages.stream({
         model: 'claude-sonnet-4-6',
         max_tokens: 4096,
         system: 'You are an expert software development assistant. Execute tasks by providing code, explanations, and step-by-step guidance.',
         messages: [{ role: 'user', content: prompt }]
       });
-      res.json({ output: message.content[0].text });
+
+      for await (const chunk of stream) {
+        if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+          res.write(`data: ${JSON.stringify({ text: chunk.delta.text })}\n\n`);
+        }
+      }
+      res.write('data: [DONE]\n\n');
+      res.end();
     } catch (e) {
-      res.status(500).json({ error: e.message });
+      res.write(`data: ${JSON.stringify({ error: e.message })}\n\n`);
+      res.end();
     }
   });
 

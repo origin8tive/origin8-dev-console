@@ -27,6 +27,36 @@ export default function App() {
     logsEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [logs]);
 
+  const readStream = async (endpoint, onChunk) => {
+    const res = await fetch(`${API}/${endpoint}`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ prompt }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({ error: res.statusText }));
+      throw new Error(data.error ?? res.statusText);
+    }
+    const reader  = res.body.getReader();
+    const decoder = new TextDecoder();
+    let   buf     = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const lines = buf.split('\n');
+      buf = lines.pop();
+      for (const line of lines) {
+        if (!line.startsWith('data: ')) continue;
+        const raw = line.slice(6).trim();
+        if (raw === '[DONE]') return;
+        const parsed = JSON.parse(raw);
+        if (parsed.error) throw new Error(parsed.error);
+        if (parsed.text) onChunk(parsed.text);
+      }
+    }
+  };
+
   const handlePlan = async () => {
     if (!prompt.trim()) return;
     setLoading(true);
@@ -38,14 +68,11 @@ export default function App() {
     addLog('Sending task to Claude for planning…', 'info');
 
     try {
-      const res  = await fetch(`${API}/plan`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt }),
+      let text = '';
+      await readStream('plan', (chunk) => {
+        text += chunk;
+        setPlan(text);
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setPlan(data.plan);
       addLog('Plan ready — review and click Execute when ready.', 'success');
       setPhase('planned');
     } catch (e) {
@@ -60,16 +87,17 @@ export default function App() {
     setLoading(true);
     setPhase('executing');
     addLog('Executing task with Claude…', 'info');
+    addLog('', 'output'); // streaming placeholder
 
     try {
-      const res  = await fetch(`${API}/execute`, {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ prompt }),
+      await readStream('execute', (chunk) => {
+        setLogs(prev => {
+          const next = [...prev];
+          const idx  = next.map(l => l.type).lastIndexOf('output');
+          if (idx !== -1) next[idx] = { ...next[idx], msg: next[idx].msg + chunk };
+          return next;
+        });
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      addLog(data.output, 'output');
       addLog('Execution complete.', 'success');
       setPhase('done');
       await refreshFiles();
